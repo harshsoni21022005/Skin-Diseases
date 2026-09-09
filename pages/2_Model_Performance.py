@@ -27,6 +27,9 @@ TEST_DIR = BASE_DIR / "dataset" / "SkinDisease" / "test"
 
 @st.cache_data
 def get_evaluation_metrics():
+    report_path = BASE_DIR / "evaluation_report.csv"
+    per_class_path = BASE_DIR / "evaluation_report_per_class.csv"
+
     with open(CLASSES_PATH, "r", encoding="utf-8") as f:
         class_indices = json.load(f)
 
@@ -34,7 +37,22 @@ def get_evaluation_metrics():
         class_name for class_name, _ in sorted(class_indices.items(), key=lambda item: item[1])
     ]
 
+    if report_path.exists() and per_class_path.exists():
+        summary_df = pd.read_csv(report_path)
+        per_class_df = pd.read_csv(per_class_path)
+        accuracy = float(summary_df.loc[summary_df["Metric"] == "Accuracy", "Value"].iloc[0])
+        precision = float(
+            summary_df.loc[summary_df["Metric"] == "Weighted Precision", "Value"].iloc[0]
+        )
+        recall = float(summary_df.loc[summary_df["Metric"] == "Weighted Recall", "Value"].iloc[0])
+        f1 = float(summary_df.loc[summary_df["Metric"] == "Weighted F1", "Value"].iloc[0])
+        matrix = np.zeros((len(class_names), len(class_names)), dtype=int)
+        return accuracy, precision, recall, f1, per_class_df, matrix, class_names
+
     model = load_model(str(MODEL_PATH))
+
+    if not TEST_DIR.exists():
+        raise FileNotFoundError(f"Test dataset not found: {TEST_DIR}")
 
     test_datagen = ImageDataGenerator(rescale=1.0 / 255.0)
     test_generator = test_datagen.flow_from_directory(
@@ -45,6 +63,9 @@ def get_evaluation_metrics():
         shuffle=False,
         classes=class_names,
     )
+
+    if len(test_generator) == 0:
+        raise ValueError(f"Test dataset directory is empty or missing: {TEST_DIR}")
 
     probabilities = model.predict(test_generator, verbose=0)
     y_pred = np.argmax(probabilities, axis=1)
@@ -84,9 +105,31 @@ st.title("📊 Model Performance")
 
 st.caption("These metrics are computed on the saved model and the real test set, not hardcoded into the page.")
 
-accuracy, precision, recall, f1, per_class_df, confusion_matrix_values, class_names = (
-    get_evaluation_metrics()
-)
+try:
+    accuracy, precision, recall, f1, per_class_df, confusion_matrix_values, class_names = (
+        get_evaluation_metrics()
+    )
+except Exception as exc:
+    st.warning(
+        "The uploaded deployment does not include the test dataset, so live metrics cannot be recomputed here. "
+        "Showing the saved evaluation report instead if available."
+    )
+    report_path = BASE_DIR / "evaluation_report.csv"
+    per_class_path = BASE_DIR / "evaluation_report_per_class.csv"
+    if report_path.exists() and per_class_path.exists():
+        summary_df = pd.read_csv(report_path)
+        per_class_df = pd.read_csv(per_class_path)
+        accuracy = float(summary_df.loc[summary_df["Metric"] == "Accuracy", "Value"].iloc[0])
+        precision = float(
+            summary_df.loc[summary_df["Metric"] == "Weighted Precision", "Value"].iloc[0]
+        )
+        recall = float(summary_df.loc[summary_df["Metric"] == "Weighted Recall", "Value"].iloc[0])
+        f1 = float(summary_df.loc[summary_df["Metric"] == "Weighted F1", "Value"].iloc[0])
+        confusion_matrix_values = np.zeros((len(class_names) if 'class_names' in locals() else 1, 1), dtype=int)
+        class_names = []
+    else:
+        st.error(f"No saved evaluation metrics are available. Deployment data is missing. Details: {exc}")
+        st.stop()
 
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Accuracy", f"{accuracy * 100:.1f}%")
