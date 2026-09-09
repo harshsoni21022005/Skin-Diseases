@@ -40,7 +40,7 @@ if uploaded_file is not None:
         file_bytes = uploaded_file.getvalue()
         image = Image.open(BytesIO(file_bytes))
         image = ImageOps.exif_transpose(image).convert("RGB")
-        st.image(uploaded_file, caption="Uploaded image", use_container_width=True)
+        st.image(image, caption="Uploaded image", use_column_width=True)
 
         temp_path = os.path.join(tempfile.gettempdir(), "temp_upload.jpg")
         image.save(temp_path)
