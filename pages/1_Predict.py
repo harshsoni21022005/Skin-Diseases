@@ -4,12 +4,14 @@ Predict page — upload an image and get a disease prediction.
 
 import sys
 import os
+import tempfile
+from io import BytesIO
 
 # Make sure predict.py (in the project root) is importable from this pages/ subfolder
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import streamlit as st
-from PIL import Image
+from PIL import Image, ImageOps
 
 from predict import load_trained_model, load_class_mapping, predict_image
 
@@ -34,14 +36,20 @@ model, idx_to_class = get_model_and_classes()
 uploaded_file = st.file_uploader("Choose an image", type=["jpg", "jpeg", "png"])
 
 if uploaded_file is not None:
-    image = Image.open(uploaded_file).convert("RGB")
-    st.image(image, caption="Uploaded image", use_container_width=True)
+    try:
+        file_bytes = uploaded_file.getvalue()
+        image = Image.open(BytesIO(file_bytes))
+        image = ImageOps.exif_transpose(image).convert("RGB")
+        st.image(uploaded_file, caption="Uploaded image", use_container_width=True)
 
-    temp_path = "temp_upload.jpg"
-    image.save(temp_path)
+        temp_path = os.path.join(tempfile.gettempdir(), "temp_upload.jpg")
+        image.save(temp_path)
 
-    with st.spinner("Classifying..."):
-        results = predict_image(temp_path, model, idx_to_class, top_k=5)
+        with st.spinner("Classifying..."):
+            results = predict_image(temp_path, model, idx_to_class, top_k=5)
+    except Exception as exc:
+        st.error(f"Could not process the uploaded image. Please upload a valid JPG, JPEG, or PNG file.\n\nDetails: {exc}")
+        st.stop()
 
     st.subheader("Predictions")
     for rank, (label, confidence) in enumerate(results, start=1):
